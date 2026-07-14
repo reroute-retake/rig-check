@@ -314,11 +314,17 @@ def apply_rules(rep):
     # GPU
     g = rep["tests"].get("gpu", {})
     if int(g.get("GPU_COUNT", 0) or 0) > 0:
-        if g.get("GPU_TEST") == "glmark2":
-            emit("GPU", "PASS" if g.get("GPU_TEST_OUTCOME") in ("completed", "timeout") else "WARN",
-                 [f"glmark2 score {g.get('GPU_SCORE','?')}"])
+        gtest = g.get("GPU_TEST", "")
+        if gtest.startswith("glmark2"):
+            outc = g.get("GPU_TEST_OUTCOME")
+            if outc in ("completed", "timeout"):
+                emit("GPU", "PASS", [f"{gtest} completed, score {g.get('GPU_SCORE','?')}"])
+            elif outc == "aborted":
+                emit("GPU", "WARN", ["GPU stress aborted by watchdog/user — no verdict"])
+            else:
+                emit("GPU", "WARN", [f"{gtest} exited abnormally — possible driver limitation or GPU instability (see glmark2.log)"])
         else:
-            emit("GPU", "INFO", ["detected; stress test deferred to full RigCheck ISO"])
+            emit("GPU", "INFO", [g.get("GPU_NOTES", "detected; stress not available in this environment")])
     else:
         emit("GPU", "SKIP", ["no GPU detected"])
 

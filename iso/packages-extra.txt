@@ -1,0 +1,48 @@
+# RigCheck additions on top of archiso releng (one package per line).
+# build.sh validates each against the repos and skips unknowns with a warning.
+
+# hardware identification
+dmidecode
+lshw
+hwinfo
+inxi
+pciutils
+usbutils
+ethtool
+
+# storage testing
+smartmontools
+nvme-cli
+hdparm
+fio
+exfatprogs
+dosfstools
+
+# memory testing (userspace; memtest86+ boot entries come with releng)
+memtester
+memtest86+
+memtest86+-efi
+
+# cpu stress + benchmark
+stress-ng
+sysbench
+p7zip
+
+# sensors
+lm_sensors
+
+# gpu detection + stress (glmark2-drm runs on KMS without X)
+mesa
+mesa-utils
+glmark2
+vulkan-tools
+clinfo
+
+# network (ethernet-first, wifi hotspot fallback)
+networkmanager
+iw
+wireless-regdb
+
+# runtime
+python
+openssl

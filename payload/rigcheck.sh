@@ -7,12 +7,14 @@ export RIGDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export LIB="$RIGDIR/lib"
 . "$LIB/common.sh"
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 [ "$(id -u)" = "0" ] || die "Run as root (SystemRescue default shell is root)."
 has python3 || die "python3 not found — is this really SystemRescue?"
 
 # ------------------------------------------------------------ config
-CONF="$RIGDIR/rigcheck.conf"
+# RIGCHECK_CONF/RIGCHECK_REPORTS are set by the ISO launcher (config + report
+# storage live on the USB data partition; the image itself is read-only).
+CONF="${RIGCHECK_CONF:-$RIGDIR/rigcheck.conf}"
 [ -f "$CONF" ] && . "$CONF"
 MODE="${MODE:-ask}"; ABORT_TEMP_C="${ABORT_TEMP_C:-95}"; NVME_ABORT_TEMP_C="${NVME_ABORT_TEMP_C:-82}"
 DISK_ABORT_TEMP_C="${DISK_ABORT_TEMP_C:-70}"; BEEP="${BEEP:-yes}"
@@ -24,7 +26,7 @@ banner "RigCheck $VERSION — PC hardware diagnostic"
 beep_init; beep_pattern 2 120 &
 
 # ------------------------------------------------------------ run dir (prefer USB so report survives)
-RUN_PARENT="$RIGDIR/reports"
+RUN_PARENT="${RIGCHECK_REPORTS:-$RIGDIR/reports}"
 mkdir -p "$RUN_PARENT" 2>/dev/null
 if ! touch "$RUN_PARENT/.rw_test" 2>/dev/null; then
     warn "USB not writable — falling back to /root/rigcheck-reports (copy or email the report before shutdown!)"
@@ -143,7 +145,7 @@ python3 "$LIB/report.py" finalize "$CONF" "$RUN"; RC=$?
 sync
 echo
 log "Files: $RUN/report.json  +  report.html  (open the HTML on any machine)"
-[ "$RUN_PARENT" = "$RIGDIR/reports" ] && log "They are ON THE USB STICK — safe to power off after this message."
+[ "$RUN_PARENT" != "/root/rigcheck-reports" ] && log "They are ON THE USB STICK — safe to power off after this message."
 if grep -qE 'RAM_RESULT=(partial|skipped)' "$RUN/ram.env" 2>/dev/null || [ "$MODE" = "detailed" ]; then
     log "TIP: for 100% RAM coverage, reboot and pick the Memtest86+ entry in the Ventoy menu."
 fi

@@ -18,8 +18,8 @@ flaky machine, burn-in testing new builds — including **headless** machines
 | 1 | GitHub project skeleton | ✅ this repo |
 | 2 | Structured detection (`hardware.json`) + capability probing that scales test intensity to the machine | ✅ shipped |
 | 3 | Hardened tests: mid-run SMART-error watchdog, chunked RAM sweeps, self-test orchestration with progress/ETA, per-core fault attribution, PC-speaker beeps | ✅ shipped |
-| 4–6 | Setup wizard polish, hardened unattended mode | 🔜 planned |
-| 7 | Custom ISO built by CI, GPU stress, Secure Boot story | 🔜 planned |
+| 4–6 | Menu/unattended mode, setup wizard, signed reporting | ✅ shipped (in 0–3) |
+| 7 | **Custom ISO built by CI** — all tools baked in, auto-start on boot, GPU stress via glmark2-drm (AMD/Intel), Memtest86+ boot entry | ✅ shipped ([docs/BUILDING.md](docs/BUILDING.md)) |
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 

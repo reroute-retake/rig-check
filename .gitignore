@@ -15,3 +15,5 @@ rigcheck.conf
 *.img
 *.tar.gz
 reports/
+out/
+/tmp-work/

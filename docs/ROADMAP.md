@@ -75,8 +75,21 @@ Honest limit: with physical control of stick + machine, a skilled attacker can
 defeat local-only measures. TPM 2.0 remote attestation is the real fix —
 tracked as a stretch goal (unreliable on pre-2018 consumer boards).
 
-## Phase 7 — Custom ISO & CI
-archiso (or live-build) profile baking all tools + GRUB menu with Memtest
-entry; GitHub Actions builds the hybrid BIOS+UEFI ISO and publishes releases
-on tag. Bundled GPU stress tools, optional shim/Secure Boot story, offline
+## Phase 7 — Custom ISO & CI ✅
+Shipped (see docs/BUILDING.md):
+- `iso/build.sh` bases the image on archiso's official **releng** profile
+  (hybrid BIOS+UEFI boot, **Memtest86+ menu entries** included) and overlays
+  RigCheck: full toolchain baked in (smartmontools, nvme-cli, fio, memtester,
+  stress-ng, sysbench, lm_sensors, glmark2 incl. **glmark2-drm** for
+  no-X GPU stress on AMD/Intel, NetworkManager), payload at `/opt/rigcheck`,
+  auto-start on tty1 via `rigcheck-launch`.
+- Package names are validated at build time and skipped with a warning if a
+  repo renames one — the build degrades instead of breaking.
+- The launcher finds the USB **data partition** (RIGCHECK_DATA label, Ventoy
+  partition, or any partition with `rigcheck/rigcheck.conf`), so config and
+  reports live on the stick while the image stays read-only.
+- `.github/workflows/build-iso.yml`: tag `v*` → CI builds in an Arch
+  container → GitHub Release with the ISO + sha256sums. Manual runs produce
+  workflow artifacts.
+Deferred: NVIDIA proprietary bundling; signed/shim Secure Boot; offline
 package cache.

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# RigCheck ISO launcher — locate the USB data partition (config + report
+# storage), then start the suite from the read-only image at /opt/rigcheck.
+#
+# Search order:
+#   1. partition labeled RIGCHECK_DATA (dd users who added a data partition)
+#   2. the Ventoy partition (label Ventoy/VENTOY) — the recommended setup
+#   3. any partition containing rigcheck/rigcheck.conf
+# No data partition found -> run with defaults; reports land in /root and the
+# report engine will still email them when configured+online.
+set -uo pipefail
+
+DATA=""
+for lbl in RIGCHECK_DATA Ventoy VENTOY; do
+    dev=$(blkid -L "$lbl" 2>/dev/null || true)
+    [ -n "$dev" ] && { DATA="$dev"; break; }
+done
+if [ -z "$DATA" ]; then
+    for dev in $(lsblk -rpno NAME,TYPE 2>/dev/null | awk '$2=="part"{print $1}'); do
+        mnt=$(mktemp -d)
+        if mount -o ro "$dev" "$mnt" 2>/dev/null; then
+            if [ -f "$mnt/rigcheck/rigcheck.conf" ]; then
+                umount "$mnt"; rmdir "$mnt"; DATA="$dev"; break
+            fi
+            umount "$mnt"
+        fi
+        rmdir "$mnt" 2>/dev/null || true
+    done
+fi
+
+export RIGCHECK_CONF="" RIGCHECK_REPORTS=""
+if [ -n "$DATA" ]; then
+    mkdir -p /mnt/rigdata
+    if mount "$DATA" /mnt/rigdata 2>/dev/null || mount -o remount,rw "$DATA" /mnt/rigdata 2>/dev/null; then
+        mkdir -p /mnt/rigdata/rigcheck/reports 2>/dev/null || true
+        [ -f /mnt/rigdata/rigcheck/rigcheck.conf ] && export RIGCHECK_CONF="/mnt/rigdata/rigcheck/rigcheck.conf"
+        if touch /mnt/rigdata/rigcheck/reports/.rw_test 2>/dev/null; then
+            rm -f /mnt/rigdata/rigcheck/reports/.rw_test
+            export RIGCHECK_REPORTS="/mnt/rigdata/rigcheck/reports"
+        fi
+        echo "[rigcheck-launch] data partition: $DATA (conf: ${RIGCHECK_CONF:-none}, reports: ${RIGCHECK_REPORTS:-RAM only})"
+    fi
+else
+    echo "[rigcheck-launch] no data partition found — running with defaults, reports stay in /root (configure email to receive them)"
+fi
+
+exec bash /opt/rigcheck/rigcheck.sh
