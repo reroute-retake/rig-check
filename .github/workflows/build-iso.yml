@@ -1,0 +1,79 @@
+name: Build RigCheck ISO
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-iso:
+    name: Build ISO (archiso)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    steps:
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed archiso git
+          df -h /
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-$(date +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build ISO
+        run: |
+          RIGCHECK_VERSION="${{ steps.ver.outputs.version }}" \
+          RIGCHECK_OUT_DIR="$PWD/out" \
+          bash iso/build.sh
+          ls -lah out/
+
+      - name: Rename with version
+        run: |
+          cd out
+          iso=$(ls ./*.iso | head -1)
+          mv "$iso" "rigcheck-${{ steps.ver.outputs.version }}-x86_64.iso"
+          sha256sum ./*.iso > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Upload build artifact (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rigcheck-iso-${{ steps.ver.outputs.version }}
+          path: |
+            out/*.iso
+            out/sha256sums.txt
+          retention-days: 7
+
+      - name: Publish GitHub Release (tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/*.iso
+            out/sha256sums.txt
+          generate_release_notes: true
+          body: |
+            **RigCheck bootable diagnostic ISO** — flash with Ventoy (recommended: keeps
+            config + reports on the stick) or dd/Etcher.
+
+            Quick use with an existing RigCheck/Ventoy stick: copy the `.iso` next to your
+            other ISOs and pick **RigCheck diagnostic** in the Ventoy menu. Your
+            `rigcheck/rigcheck.conf` on the stick is picked up automatically; reports are
+            written back to `rigcheck/reports/`. The suite auto-starts on boot (tty1).
+
+            For a full-coverage RAM test, choose the **Memtest86+** entry in the boot menu.
+            Verify the download with `sha256sums.txt`.
