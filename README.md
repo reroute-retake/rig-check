@@ -1,124 +1,140 @@
 # RigCheck
 
-**A bootable USB stick that health-checks any PC.** Boot from it, and RigCheck
-identifies every component (CPU, motherboard, BIOS, RAM DIMMs, drives, GPU, NICs —
-with serial numbers), runs tiered hardware tests under a thermal-safety watchdog,
-and produces a **signed JSON + HTML report** — shown on screen, saved to the stick,
-and optionally emailed to you with AI-assisted analysis.
+[![Latest release](https://img.shields.io/github/v/release/reroute-retake/rig-check?label=release&color=2ea44f)](https://github.com/reroute-retake/rig-check/releases/latest)
+[![ISO build](https://img.shields.io/github/actions/workflow/status/reroute-retake/rig-check/build-iso.yml?label=ISO%20build)](https://github.com/reroute-retake/rig-check/actions/workflows/build-iso.yml)
+[![Downloads](https://img.shields.io/github/downloads/reroute-retake/rig-check/total?label=downloads&color=blue)](https://github.com/reroute-retake/rig-check/releases)
+[![Platform](https://img.shields.io/badge/platform-x86--64%20·%20BIOS%20%2B%20UEFI-informational)](#honest-limits)
+[![License](https://img.shields.io/github/license/reroute-retake/rig-check)](LICENSE)
 
-Built for real-world situations: checking a used PC before buying, diagnosing a
-flaky machine, burn-in testing new builds — including **headless** machines
-(no monitor/keyboard) and old hardware (BIOS or UEFI, 8GB-RAM friendly).
+**Boot any PC from USB → identify every component → run safety-guarded hardware tests →
+get a tamper-evident report.** For checking used PCs before buying, diagnosing flaky
+machines, and burn-in testing builds — including **headless** machines (no monitor or
+keyboard) and old hardware. 8 GB-RAM friendly; tests scale themselves to the machine.
 
-## Status
+## 📥 Get it
 
-| Phase | What | State |
+**[⬇ Download the latest ISO](https://github.com/reroute-retake/rig-check/releases/latest)** (~1.7 GB, BIOS + UEFI hybrid)
+
+1. Install [Ventoy](https://www.ventoy.net) on a USB stick (8 GB min, 32 GB recommended) and copy the ISO onto it
+2. Optional: create `rigcheck/rigcheck.conf` on the stick ([template](payload/rigcheck.conf.example)) — preselect a test mode, add wifi/email/LLM settings
+3. Boot the target PC from USB (F12/F11/ESC) → pick **RigCheck diagnostic** → it runs itself
+
+Verify downloads with the release's `sha256sums.txt`. Prefer a guided setup with a
+signing key, wizard, and SystemRescue fallback? Use [`make-usb.sh`](#create-a-usb-from-the-repo).
+
+## What a run looks like
+
+```text
+──── Detected hardware ────
+  CPU      Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz  (4c/8t, AVX2)
+  RAM      7.7GB total, 6400MB free  [8 GB DDR4@2400 MT/s]
+  Drive    /dev/nvme0n1  SK hynix PC401  512.1GB  [nvme, SMART ok]
+  GPU      Intel UHD Graphics 620  [driver: i915, full]
+  Sensors  coretemp, nvme, acpitz  → abort at 93°C
+
+Class: MID — 8 threads / 7.7GB RAM; NVMe present
+  coffee tier scaled: RAM test 1920MB, CPU stress 5min, disk bench 40s
+
+================ RigCheck summary ================
+  Overall: PASS   mode=coffee  duration=15min
+  Fingerprint: 0b49d42a069c  (read this out to the owner if asked)
+
+  PASS  RAM      2048MB tested clean; full coverage needs Memtest86+ boot entry
+  PASS  CPU      stable for 5 min on 8 threads, peak 85°C, no throttling
+  PASS  Storage  /dev/nvme0n1: healthy (self-test passed, 1450MB/s seq read)
+  PASS  System   max CPU 85°C / max drive 50°C; no hardware errors in kernel log
+==================================================
+```
+
+…plus a self-contained `report.html` (temperature chart, DIMM/drive serials, benchmark
+scores) and machine-readable `report.json`, both written to the USB stick and optionally
+emailed to you.
+
+## Features
+
+- 🔍 **Deep identification** — CPU features & mitigation status, per-DIMM details + ECC,
+  board/BIOS with serials, drives + SMART health, GPU driver class, NICs, sensor limits
+- 📏 **Capability-scaled tests** — weak/mid/strong machine classing adjusts working sets
+  and durations; low-RAM systems skip safely toward Memtest86+; sensor-blind systems get
+  shortened stress
+- ☕ **Three tiers** — coffee (~15 min smoke test) · standard (~40 min) · detailed
+  (hours: SMART extended, multi-pass RAM, CPU torture)
+- 🛡️ **Safety watchdog** — CPU/NVMe/SATA temperature auto-abort (Tjmax-aware), **mid-run
+  SMART-error abort** (drive degrading under load), Ctrl-C graceful stop, headless beeps
+- 🎯 **Per-core fault attribution** — verification errors trigger an isolation pass that
+  names the faulty core(s)
+- 🔏 **Tamper-evident reports** — per-stick HMAC signing, challenge nonce, hardware-serial
+  binding; validate anything you're handed with one `verify.py` command
+- 📶 **Headless & connected** — auto-start with countdown, ethernet-first networking with
+  phone-hotspot fallback, start/finish notifications, emailed reports, optional power-off
+- 🤖 **Optional AI triage** — plain-language analysis via API key; rule-based pass/fail
+  always works fully offline
+- 🧯 **Strictly non-destructive** — SMART self-tests run inside the drive, benchmarks are
+  read-only, RAM tests use only free memory
+
+## Test tiers
+
+| Tier | Time | Honest signal |
 |---|---|---|
-| 0 | Ventoy + SystemRescue + script payload (this repo, works today) | ✅ shipped |
-| 1 | GitHub project skeleton | ✅ this repo |
-| 2 | Structured detection (`hardware.json`) + capability probing that scales test intensity to the machine | ✅ shipped |
-| 3 | Hardened tests: mid-run SMART-error watchdog, chunked RAM sweeps, self-test orchestration with progress/ETA, per-core fault attribution, PC-speaker beeps | ✅ shipped |
-| 4–6 | Menu/unattended mode, setup wizard, signed reporting | ✅ shipped (in 0–3) |
-| 7 | **Custom ISO built by CI** — all tools baked in, auto-start on boot, GPU stress via glmark2-drm (AMD/Intel), Memtest86+ boot entry | ✅ shipped ([docs/BUILDING.md](docs/BUILDING.md)) |
+| **coffee** | ~15 min | smoke test: gross RAM errors, dying drives (SMART), obvious thermal/instability |
+| **standard** | ~40 min | solid confidence check for buy/keep decisions |
+| **detailed** | hours | burn-in: SMART extended self-tests, near-full free-RAM sweeps, 1 h+ CPU torture |
 
-See [docs/ROADMAP.md](docs/ROADMAP.md).
+For **100 % RAM coverage** reboot into the **Memtest86+** entry in the boot menu —
+userspace tests physically cannot reach memory the OS occupies.
 
-## How it works (Phase 0)
-
-```
-┌─ USB stick (Ventoy) ─────────────────────────────┐
-│  SystemRescue ISO   ← boots the test environment │
-│  Memtest86+ ISO     ← full-coverage RAM testing  │
-│  rigcheck/          ← test suite + config        │
-│    rigcheck.sh, lib/, rigcheck.conf, reports/    │
-└──────────────────────────────────────────────────┘
-```
-
-Tests are **strictly non-destructive**: SMART self-tests run inside the drive,
-disk benchmarks are read-only, RAM tests use only free memory. Nothing on the
-target machine's drives is modified.
-
-## Quick start
-
-### 1. Create the USB (Linux)
+## Create a USB from the repo
 
 ```bash
-git clone https://github.com/reroute-retake/rig-check.git
-cd rig-check
+git clone https://github.com/reroute-retake/rig-check.git && cd rig-check
 bash make-usb.sh
 ```
 
-Needs: `sudo`, `curl`/`wget`, `unzip`, ~2.5GB free disk (checked at start; put
-downloads elsewhere with `RIGCHECK_DL=/path bash make-usb.sh`), a USB stick
-(8GB min, 16–32GB recommended), internet on first run (downloads cached).
+Linux host; needs `sudo`, `curl`/`wget`, `unzip`, ~2.5 GB free (checked at start; relocate
+downloads with `RIGCHECK_DL=/path`). The wizard wipes the chosen stick only after an
+explicit `YES`, installs Ventoy + SystemRescue + Memtest86+ + the payload, walks through
+optional settings, and generates a per-stick **signing key** (kept in `~/.rigcheck/keys/`).
 
-The wizard picks the USB drive (explicit `YES` confirmation before wiping),
-installs [Ventoy](https://www.ventoy.net), copies
-[SystemRescue](https://www.system-rescue.org) + [Memtest86+](https://memtest.org)
-and the RigCheck payload, then asks for optional settings:
-
-- **Preselected mode** → the test PC auto-starts after a 10s countdown (headless-friendly)
-- **WiFi hotspot** credentials (ethernet is tried first, automatically)
-- **Email** via SMTP (Gmail: app password) → report mailed to you
-- **Anthropic API key** → optional AI analysis appended to the report
-- **After-test action**: stay on, or power off (your headless "done" signal)
-
-It also generates a per-stick **signing key** (`~/.rigcheck/keys/`) so reports can
-be verified later.
-
-### 2. Test a PC
-
-1. Plug in → power on → boot-menu key (**F12**/F11/F8/ESC) → USB → **SystemRescue**
-2. At the root shell:
-   ```bash
-   mount -L Ventoy /mnt && bash /mnt/rigcheck/rigcheck.sh
-   ```
-3. Pick a tier:
-
-| Tier | Time | Signal |
-|---|---|---|
-| **coffee** | ~15 min | smoke test — gross RAM errors, dying drives (SMART), obvious thermal/instability |
-| **standard** | ~40 min | solid confidence check |
-| **detailed** | hours | burn-in: SMART extended tests, near-full free-RAM sweep, 1h CPU torture |
-
-For **100% RAM coverage**, reboot into the **Memtest86+** entry (userspace tests
-physically cannot reach memory the OS occupies).
-
-4. Report → screen summary + `rigcheck/reports/run-*/report.html` on the stick
-   (+ email if configured).
-
-### 3. Verify a received report
-
-If someone else ran the test for you:
+## Verifying a report
 
 ```bash
 python3 verify.py report.json --key-file ~/.rigcheck/keys/<stick-id>.key
 ```
 
-Valid = unmodified and signed by *your* stick. The report embeds board/drive
-serials and MACs (cross-check against the physical machine) and an optional
-**challenge nonce** you issue at test time — together these defeat fabricated,
-edited, replayed, or wrong-machine reports. See the threat model in
+Valid = unmodified and signed by *your* stick. Cross-check the embedded board/drive
+serials against the physical machine; issue a challenge nonce at test time
+(`CHALLENGE_NONCE` / `NONCE_PROMPT='yes'`) to defeat replays. Threat model:
 [docs/ROADMAP.md](docs/ROADMAP.md#report-authenticity).
 
 ## Safety
 
-- Watchdog samples temps every 2s; **auto-aborts** stress at 95°C CPU / 82°C NVMe
-  (configurable in `rigcheck.conf`)
-- **Ctrl-C** = graceful emergency stop, partial report still written
-- Storage tests are read-only / in-drive; nothing is written to target drives
+The watchdog samples temperatures every 2 s and aborts stress at 95 °C CPU / 82 °C NVMe /
+70 °C SATA (auto-tightened below the chip's own critical limit; configurable). SMART
+counters are re-checked every ~60 s mid-run. **Ctrl-C** always stops gracefully and still
+writes a partial report. Storage tests never write to the machine's drives.
 
-## Honest limits (Phase 0)
+## Honest limits
 
-- **GPU**: detect-only (drivers for GPU stress arrive with the custom ISO; NVIDIA
-  needs the proprietary driver stock live ISOs don't ship)
-- **PSU**: no software can truly test a PSU — rails are reported where sensors
-  expose them; instability under combined load is flagged
-- **RAM**: userspace tests cover free memory only — Memtest86+ boot entry is the
-  real thing
-- **Secure Boot**: disable it, or enroll Ventoy's key once (needs a monitor that
-  one time)
+- **NVIDIA**: detected, not stress-tested (proprietary driver not bundled); AMD/Intel get
+  real GPU stress via `glmark2-drm` (no X needed)
+- **PSU**: no software can truly test one — rails reported where sensors exist,
+  instability under combined load is flagged
+- **Secure Boot**: unsigned ISO — disable it or use Ventoy's one-time key enrollment
+- Old CPUs (Intel 7th/8th gen etc.): fully supported; benchmark scores reflect
+  Spectre/Meltdown mitigations — compare within CPU class
 
-## License
+## Troubleshooting
 
-[MIT](LICENSE)
+- Stick won't boot → check boot-menu key, disable Secure Boot, try a USB 2.0 port on old boards
+- No wifi on a desktop → plug ethernet, or run offline: the report stays on the stick
+- Hotspot invisible → enable 2.4 GHz on the phone; set `WIFI_COUNTRY`
+- `mount -L Ventoy` fails (SystemRescue path) → `lsblk -f` and mount the exFAT partition manually
+
+## More
+
+- 🏗️ [Building the ISO](docs/BUILDING.md) — CI pipeline, local builds, boot behavior
+- 🗺️ [Roadmap & architecture](docs/ROADMAP.md) — what shipped per phase, what's deferred
+- 🤝 Issues and PRs welcome — [MIT](LICENSE) licensed
+
+Standing on the shoulders of: archiso, Memtest86+, Ventoy, SystemRescue, smartmontools,
+nvme-cli, fio, stress-ng, memtester, lm_sensors, glmark2.
