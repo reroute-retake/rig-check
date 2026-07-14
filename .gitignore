@@ -1,0 +1,17 @@
+# downloaded ISOs / installers (cached by make-usb.sh)
+downloads/
+
+# python
+__pycache__/
+*.pyc
+
+# never commit filled-in configs or signing keys
+rigcheck.conf
+*.key
+.rigcheck/
+
+# build & run artifacts
+*.iso
+*.img
+*.tar.gz
+reports/
