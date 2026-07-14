@@ -18,7 +18,21 @@ has dmidecode && {
     capture dmi_baseboard.txt dmidecode -t baseboard
     capture dmi_memory.txt    dmidecode -t memory
     capture dmi_processor.txt dmidecode -t processor
+    capture dmi_chassis.txt   dmidecode -t chassis
 }
+
+# boot mode, chassis power, sensor limits (for capability probing)
+if [ -d /sys/firmware/efi ]; then echo uefi > "$RUN/raw/boot_mode.txt"; else echo bios > "$RUN/raw/boot_mode.txt"; fi
+ls /sys/class/power_supply > "$RUN/raw/power_supply.txt" 2>/dev/null || true
+{
+    for hw in /sys/class/hwmon/hwmon*; do
+        n=$(cat "$hw/name" 2>/dev/null) || continue
+        echo "chip $n"
+        for f in "$hw"/temp*_crit "$hw"/temp*_max; do
+            [ -r "$f" ] && echo "$(basename "$f") $(cat "$f" 2>/dev/null)"
+        done
+    done
+} > "$RUN/raw/hwmon.txt" 2>/dev/null || true
 has lsblk  && capture lsblk.json  lsblk -J -b -o NAME,TYPE,SIZE,MODEL,SERIAL,TRAN,ROTA,RM,PKNAME,MOUNTPOINT
 has lspci  && capture lspci.txt   lspci -nnk
 has lsusb  && capture lsusb.txt   lsusb

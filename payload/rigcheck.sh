@@ -7,7 +7,7 @@ export RIGDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export LIB="$RIGDIR/lib"
 . "$LIB/common.sh"
 
-VERSION="0.1.0-phase0"
+VERSION="0.2.0"
 [ "$(id -u)" = "0" ] || die "Run as root (SystemRescue default shell is root)."
 has python3 || die "python3 not found — is this really SystemRescue?"
 
@@ -80,9 +80,19 @@ on_int() {
 }
 trap on_int INT TERM
 
-# ------------------------------------------------------------ detection
-step "1/6 Hardware detection"
+# ------------------------------------------------------------ detection + capability probing
+step "1/6 Hardware detection & capability probing"
 bash "$LIB/detect.sh" || warn "detection had non-fatal errors"
+if python3 "$LIB/detect.py" "$RUN" "$MODE" "$ABORT_TEMP_C"; then
+    if [ -f "$RUN/capability.env" ]; then
+        . "$RUN/capability.env"
+        export RAM_WANT_MB RAM_TIMEOUT RAM_LOOPS CPU_SECS FIO_SECS SMART_KIND ABORT_TEMP_C SKIP_RAM
+        echo "ABORT_TEMP_C=$ABORT_TEMP_C" >> "$RUN/meta.env"
+        log "Capability profile applied (class: ${MACHINE_CLASS:-unknown}) — test intensity scaled to this machine"
+    fi
+else
+    warn "capability probing failed — using default tier parameters"
+fi
 
 # ------------------------------------------------------------ network (best-effort) + start notification
 bash "$LIB/net.sh" || true

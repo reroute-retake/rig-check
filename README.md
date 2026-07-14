@@ -16,7 +16,8 @@ flaky machine, burn-in testing new builds — including **headless** machines
 |---|---|---|
 | 0 | Ventoy + SystemRescue + script payload (this repo, works today) | ✅ shipped |
 | 1 | GitHub project skeleton | ✅ this repo |
-| 2–6 | Deeper detection, hardware-scaled tests, setup wizard, hardened unattended mode | 🔜 planned |
+| 2 | Structured detection (`hardware.json`) + capability probing that scales test intensity to the machine | ✅ shipped |
+| 3–6 | Hardened test modules, setup wizard, hardened unattended mode | 🔜 planned |
 | 7 | Custom ISO built by CI, GPU stress, Secure Boot story | 🔜 planned |
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).

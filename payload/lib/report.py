@@ -373,6 +373,15 @@ def render_html(rep, svg, llm_text=None):
         llm_html = f'<h2>AI analysis</h2><div style="background:#f4f7fb;border:1px solid #cdd9ea;border-radius:6px;padding:14px;white-space:pre-wrap">{e(llm_text)}</div>'
     nonce = m.get("challenge_nonce") or ""
     nonce_html = f'<tr><td>Challenge nonce</td><td class="mono">{e(nonce)}</td></tr>' if nonce else ""
+    cap = rep.get("capability") or {}
+    cap_html = ""
+    if cap:
+        cnotes = "".join(f"<li>{e(n)}</li>" for n in cap.get("notes", []))
+        app = cap.get("applicable_tests", {})
+        app_s = " · ".join(f"{k} {'✓' if v else '—'}" for k, v in app.items())
+        cap_html = (f'<h2>Capability profile</h2><p>Machine class: <b>{e(str(cap.get("machine_class", "?")).upper())}</b>'
+                    f' — {e("; ".join(cap.get("class_reasons", [])))} · thermal abort at {cap.get("abort_temp_c", "?")}°C<br>'
+                    f'<span class="mono">{e(app_s)}</span></p>' + (f'<ul>{cnotes}</ul>' if cnotes else ''))
     aborted = '<p style="color:#c0201f;font-weight:600">⚠ Run was aborted before completion — results are partial.</p>' if m.get("aborted") else ""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>RigCheck report — {e(str(ident.get('system_product') or 'PC'))}</title>
 <style>
@@ -394,6 +403,7 @@ def render_html(rep, svg, llm_text=None):
 {aborted}
 <h2>Component results</h2>
 <table><tr><th>Component</th><th>Status</th><th>Details</th></tr>{''.join(rows)}</table>
+{cap_html}
 {llm_html}
 <h2>Temperatures during run</h2>{svg}
 <h2>System identity (cross-check against the physical machine)</h2>
@@ -490,6 +500,8 @@ def canonical(rep): return json.dumps(rep, sort_keys=True, separators=(",", ":")
 def cmd_finalize(conf_path, run):
     conf = read_conf(conf_path)
     meta_env = read_env(os.path.join(run, "meta.env"))
+    hw = load_json_file(os.path.join(run, "hardware.json"))
+    cap = load_json_file(os.path.join(run, "capability.json"))
     rep = {
         "meta": {
             "rig_version": meta_env.get("RIG_VERSION", "phase0"), "mode": meta_env.get("MODE"),
@@ -499,7 +511,7 @@ def cmd_finalize(conf_path, run):
             "challenge_nonce": meta_env.get("CHALLENGE_NONCE", ""),
             "abort_temp_c": int(meta_env.get("ABORT_TEMP_C", 95) or 95),
         },
-        "identity": build_identity(run),
+        "identity": (hw.get("identity") if hw else None) or build_identity(run),
         "tests": {
             "ram": read_env(os.path.join(run, "ram.env")),
             "cpu": read_env(os.path.join(run, "cpu.env")),
@@ -507,6 +519,10 @@ def cmd_finalize(conf_path, run):
             "storage": build_storage(run),
         },
     }
+    if hw:
+        rep["hardware"] = {k: v for k, v in hw.items() if k != "identity"}
+    if cap:
+        rep["capability"] = cap
     pts = temps_series(run)
     rep["sensors"] = {
         "max_cpu_c": max((p[1] for p in pts), default=0),

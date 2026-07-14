@@ -6,6 +6,12 @@ set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 ENV="$RUN/ram.env"; LOGF="$RUN/ram.log"
 
+if [ "${SKIP_RAM:-0}" = "1" ]; then
+    warn "capability probe: too little free RAM for a meaningful userspace test — skipping (use the Memtest86+ boot entry)"
+    { echo "RAM_RESULT=skipped"; echo "RAM_NOTES=skipped by capability probe (low free RAM); use Memtest86+ boot entry"; } >> "$ENV"
+    exit 0
+fi
+
 avail_kb=$(awk '/MemAvailable/{print $2}' /proc/meminfo); avail_mb=$((avail_kb/1024))
 HEADROOM=1500
 max_safe=$((avail_mb - HEADROOM))

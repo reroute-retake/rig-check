@@ -13,11 +13,21 @@ fio → hdparm → dd) so it runs on whatever the live ISO ships.
 ## Phase 1 — Project skeleton ✅
 This repository: layout, license, docs.
 
-## Phase 2 — Detection & capability probing
-Structured JSON inventory (CPU/board/BIOS/DIMMs/drives/GPU/sensors) plus a
-capability profile that decides *which* tests apply and *how hard* to push:
-gentler on weak/old/8GB machines, heavier on strong ones (more threads,
-bigger working sets, longer soaks).
+## Phase 2 — Detection & capability probing ✅
+Shipped as `payload/lib/detect.py`:
+- **`hardware.json`** — structured inventory: CPU (flags like AVX2/AVX-512,
+  Spectre/Meltdown mitigation status), DIMMs + ECC, chassis type (laptop
+  detection), UEFI/BIOS boot mode, drives with SMART quick-status, GPU with
+  driver class (full/basic/none), NICs, sensor chips + their critical limits.
+- **`capability.json`** — machine class (weak/mid/strong), effective abort
+  temperature derived from the chip's own critical limit (Tjmax − 7, clamped),
+  applicable-test flags, per-tier parameters scaled to the machine.
+- Scaling philosophy: each tier keeps its wall-clock promise; weak/8GB machines
+  get smaller working sets (or a RAM-test skip + Memtest86+ pointer below
+  1.8GB free), machines with unreadable temps get shortened stress ("blind
+  watchdog" safety), strong machines get bigger sets and longer soaks.
+- The orchestrator sources `capability.env`; the profile is embedded in the
+  signed report and shown in the HTML.
 
 ## Phase 3 — Test modules, hardened
 - Watchdog: per-sensor thresholds, Tjmax-aware (CPU spec − 5°C), SMART-error
