@@ -29,13 +29,24 @@ Shipped as `payload/lib/detect.py`:
 - The orchestrator sources `capability.env`; the profile is embedded in the
   signed report and shown in the HTML.
 
-## Phase 3 — Test modules, hardened
-- Watchdog: per-sensor thresholds, Tjmax-aware (CPU spec − 5°C), SMART-error
-  mid-run detection, PC-speaker beep codes for headless
-- RAM: chunked userspace sweeps + first-class reboot-to-Memtest86+ flow
-- Storage: extended self-test orchestration, per-drive-class expectations
-- CPU: mprime/Linpack-class torture option, per-core error attribution
-- GPU: glmark2/vkmark where drivers allow; gpu-burn on CUDA/ROCm
+## Phase 3 — Test modules, hardened ✅
+Shipped:
+- **Watchdog**: CPU + NVMe + SATA (drivetemp) thresholds; **mid-run SMART delta
+  detection** (`smartwatch.py` baselines drives at start, re-checks every ~60s,
+  aborts when reallocated/pending sectors or media errors GROW under load);
+  PC-speaker beep patterns for headless (start/pass/warn/fail/abort).
+- **RAM**: chunked sweeps (default 1GB chunks) with live progress, per-chunk
+  time budget, dynamic headroom re-checks, allocation-failure shrink-and-retry,
+  aggregate coverage % of physical RAM, multi-loop support in detailed tier.
+- **Storage**: self-tests launched on all drives in parallel then polled
+  together with completion %; extended tests print the drive's own ETA;
+  result read from the self-test log; per-drive-class expectations in rules
+  (NVMe/SSD/HDD read floors, class-aware temp limits).
+- **CPU**: detailed-tier memory-bus torture stage (stress-ng --matrix --verify);
+  on any verification error/crash, a **per-core isolation pass** pins a verified
+  stressor to each core (taskset/sched_setaffinity) and reports faulty cores.
+Deferred: mprime/gpu-burn (need the custom ISO), reboot-to-Memtest chainload
+(GRUB entry arrives in Phase 7).
 
 ## Phase 4 — Orchestration & unattended mode
 Menu with countdown auto-start (never blocks headless), tier scaling by

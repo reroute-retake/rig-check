@@ -7,7 +7,7 @@ export RIGDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export LIB="$RIGDIR/lib"
 . "$LIB/common.sh"
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 [ "$(id -u)" = "0" ] || die "Run as root (SystemRescue default shell is root)."
 has python3 || die "python3 not found — is this really SystemRescue?"
 
@@ -15,10 +15,13 @@ has python3 || die "python3 not found — is this really SystemRescue?"
 CONF="$RIGDIR/rigcheck.conf"
 [ -f "$CONF" ] && . "$CONF"
 MODE="${MODE:-ask}"; ABORT_TEMP_C="${ABORT_TEMP_C:-95}"; NVME_ABORT_TEMP_C="${NVME_ABORT_TEMP_C:-82}"
+DISK_ABORT_TEMP_C="${DISK_ABORT_TEMP_C:-70}"; BEEP="${BEEP:-yes}"
 AFTER_TEST="${AFTER_TEST:-stay}"
 PRESELECTED=0; [ "$MODE" != "ask" ] && PRESELECTED=1
+export DISK_ABORT_TEMP_C BEEP
 
 banner "RigCheck $VERSION — PC hardware diagnostic"
+beep_init; beep_pattern 2 120 &
 
 # ------------------------------------------------------------ run dir (prefer USB so report survives)
 RUN_PARENT="$RIGDIR/reports"
@@ -53,9 +56,9 @@ log "Mode: $MODE"
 
 # ------------------------------------------------------------ tier parameters
 case "$MODE" in
-  coffee)   export RAM_WANT_MB=2048  RAM_TIMEOUT=420  RAM_LOOPS=1 CPU_SECS=300  FIO_SECS=40  SMART_KIND=short BENCH=quick ;;
-  standard) export RAM_WANT_MB=pct60 RAM_TIMEOUT=900  RAM_LOOPS=1 CPU_SECS=720  FIO_SECS=90  SMART_KIND=short BENCH=full ;;
-  detailed) export RAM_WANT_MB=max   RAM_TIMEOUT=5400 RAM_LOOPS=4 CPU_SECS=3600 FIO_SECS=240 SMART_KIND=long  BENCH=full ;;
+  coffee)   export RAM_WANT_MB=2048  RAM_TIMEOUT=420  RAM_LOOPS=1 CPU_SECS=300  FIO_SECS=40  SMART_KIND=short BENCH=quick TORTURE=0 ;;
+  standard) export RAM_WANT_MB=pct60 RAM_TIMEOUT=900  RAM_LOOPS=1 CPU_SECS=720  FIO_SECS=90  SMART_KIND=short BENCH=full  TORTURE=0 ;;
+  detailed) export RAM_WANT_MB=max   RAM_TIMEOUT=5400 RAM_LOOPS=4 CPU_SECS=3600 FIO_SECS=240 SMART_KIND=long  BENCH=full  TORTURE=1 ;;
 esac
 export ABORT_TEMP_C NVME_ABORT_TEMP_C MODE
 
@@ -101,8 +104,9 @@ if [ "$ONLINE" = "1" ] && [ -n "${EMAIL_TO:-}" ]; then
     python3 "$LIB/report.py" notify-start "$CONF" "$RUN" || warn "start notification failed (continuing)"
 fi
 
-# ------------------------------------------------------------ watchdog
-step "2/6 Starting thermal watchdog (abort at CPU ${ABORT_TEMP_C}°C / NVMe ${NVME_ABORT_TEMP_C}°C)"
+# ------------------------------------------------------------ watchdog (thermal + mid-run SMART deltas)
+step "2/6 Starting watchdog (abort: CPU ${ABORT_TEMP_C}°C / NVMe ${NVME_ABORT_TEMP_C}°C / disk ${DISK_ABORT_TEMP_C}°C / new SMART errors)"
+python3 "$LIB/smartwatch.py" baseline "$RUN" || warn "SMART baseline unavailable (mid-run drive monitoring disabled)"
 bash "$LIB/watchdog.sh" & WD_PID=$!
 sleep 1
 
@@ -140,6 +144,10 @@ sync
 echo
 log "Files: $RUN/report.json  +  report.html  (open the HTML on any machine)"
 [ "$RUN_PARENT" = "$RIGDIR/reports" ] && log "They are ON THE USB STICK — safe to power off after this message."
+if grep -qE 'RAM_RESULT=(partial|skipped)' "$RUN/ram.env" 2>/dev/null || [ "$MODE" = "detailed" ]; then
+    log "TIP: for 100% RAM coverage, reboot and pick the Memtest86+ entry in the Ventoy menu."
+fi
+case "$RC" in 0) beep_pattern 2 200 & ;; 1) beep_pattern 3 200 & ;; *) beep_pattern 5 300 & ;; esac
 
 if [ "$AFTER_TEST" = "poweroff" ] && [ "$PRESELECTED" = "1" ]; then
     warn "Powering off in 20s (AFTER_TEST=poweroff). Ctrl-C to cancel."

@@ -77,3 +77,28 @@ nvme_temp_mc() {
     done
     echo "$max"
 }
+sata_temp_mc() {  # SATA/USB drive temps via the drivetemp hwmon driver
+    local max=0 t f hw
+    for hw in /sys/class/hwmon/hwmon*; do
+        [ "$(cat "$hw/name" 2>/dev/null)" = "drivetemp" ] || continue
+        for f in "$hw"/temp*_input; do
+            [ -r "$f" ] || continue
+            t=$(cat "$f" 2>/dev/null) || continue
+            [ -n "$t" ] && [ "$t" -gt "$max" ] 2>/dev/null && max=$t
+        done
+    done
+    echo "$max"
+}
+
+# PC-speaker beeps for headless runs (best-effort; silent when unsupported)
+beep_init() { [ "${BEEP:-yes}" = "yes" ] && modprobe pcspkr 2>/dev/null || true; }
+beep_pattern() { # <count> [duration_ms]
+    [ "${BEEP:-yes}" = "yes" ] || return 0
+    local n=${1:-1} d=${2:-150} i
+    if command -v beep >/dev/null 2>&1; then
+        for ((i=0; i<n; i++)); do beep -l "$d" 2>/dev/null || true; sleep 0.15; done
+    else
+        for ((i=0; i<n; i++)); do { printf '\a' > /dev/tty0; } 2>/dev/null || printf '\a' 2>/dev/null || true; sleep 0.3; done
+    fi
+    return 0
+}

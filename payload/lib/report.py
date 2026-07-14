@@ -194,13 +194,16 @@ def build_storage(run):
     return disks
 
 def temps_series(run):
+    """Parse temps.csv (3-col legacy or 4-col with disk) -> [ts, cpu_c, drive_c]."""
     pts = []
     p = os.path.join(run, "temps.csv")
     if os.path.exists(p):
         for line in open(p).readlines()[1:]:
             try:
-                ts, cpu, nv = line.strip().split(",")
-                pts.append([int(ts), int(cpu), int(nv)])
+                cols = line.strip().split(",")
+                ts, cpu = int(cols[0]), int(cols[1])
+                drive = max(int(c) for c in cols[2:4] if c != "") if len(cols) > 2 else 0
+                pts.append([ts, cpu, drive])
             except Exception: pass
     # downsample to <=300 points
     if len(pts) > 300:
@@ -216,13 +219,14 @@ def apply_rules(rep):
     # RAM
     r = rep["tests"].get("ram", {})
     res, errs = r.get("RAM_RESULT", "skipped"), int(r.get("RAM_ERRORS", 0) or 0)
-    reasons = []
+    cov = r.get("RAM_COVERAGE_PCT")
+    cov_s = f" (~{cov}% of physical RAM, {r.get('RAM_CHUNKS_DONE','?')} chunks, {r.get('RAM_LOOPS_DONE','1')} loop(s))" if cov else ""
     if res == "fail" or errs > 0:
         emit("RAM", "FAIL", [f"{errs} memory error(s) detected — likely bad RAM stick/slot"] + ([r["RAM_NOTES"]] if r.get("RAM_NOTES") else []))
     elif res == "pass":
-        emit("RAM", "PASS", [f"{r.get('RAM_TESTED_MB','?')}MB tested clean ({r.get('RAM_TOOL','?')}); full coverage needs Memtest86+ boot entry"])
+        emit("RAM", "PASS", [f"{r.get('RAM_TESTED_MB','?')}MB tested clean{cov_s} via {r.get('RAM_TOOL','?')}; full coverage needs Memtest86+ boot entry"])
     elif res == "partial":
-        emit("RAM", "PASS", [f"time-capped: no errors in tested portion ({r.get('RAM_TESTED_MB','?')}MB); run 'detailed' or Memtest86+ for certainty"])
+        emit("RAM", "PASS", [f"time-capped: {r.get('RAM_TESTED_MB','?')}MB clean{cov_s}; run 'detailed' or Memtest86+ for certainty"])
     elif res == "aborted":
         emit("RAM", "WARN", ["test aborted before completion — no verdict"])
     else:
@@ -240,11 +244,17 @@ def apply_rules(rep):
             status = "FAIL"; reasons.append(c.get("CPU_NOTES", "stress failure"))
         elif res == "aborted":
             ar = rep["meta"].get("abort_reason", "")
-            if "THERMAL" in ar:
+            if "THERMAL_CPU" in ar:
                 status = "FAIL"; reasons.append(f"watchdog thermal abort ({ar}) — cooling insufficient (fan/paste/dust/airflow)")
+            elif "SMART_ERRORS" in ar:
+                status = "WARN"; reasons.append("run aborted due to storage errors mid-test (see Storage) — CPU verdict incomplete")
             else:
                 status = "WARN"; reasons.append("aborted by user — no verdict")
         if verrs > 0: status = "FAIL"; reasons.append(f"{verrs} computation verification error(s) — instability (CPU/RAM/VRM/PSU)")
+        if c.get("CPU_BAD_CORES"):
+            status = "FAIL"; reasons.append(f"per-core isolation attributes faults to core(s): {c['CPU_BAD_CORES']}")
+        if c.get("CPU_TORTURE_RAN") == "1" and status == "PASS":
+            reasons.append("survived additional memory-bus torture stage")
         if throttle > 0 and status != "FAIL":
             status = "WARN"; reasons.append(f"thermal throttling occurred ({throttle} events) — cooling is marginal")
         if maxt >= 90 and status == "PASS":
@@ -255,13 +265,18 @@ def apply_rules(rep):
     else:
         emit("CPU", "SKIP", ["not run"])
 
-    # Storage
+    # Storage (with per-drive-class expectations)
     stor = rep["tests"].get("storage", [])
+    id_drives = {d.get("name"): d for d in rep.get("identity", {}).get("drives", [])}
     if stor:
         worst, reasons = "PASS", []
         for d in stor:
             nm = f"/dev/{d.get('name')}({d.get('model') or '?'})"
             ata, nv = d.get("ata") or {}, d.get("nvme") or {}
+            idd = id_drives.get(d.get("name"), {})
+            is_nvme = str(d.get("name", "")).startswith("nvme") or idd.get("bus") == "nvme"
+            is_hdd = bool(idd.get("rotational")) and not is_nvme
+            dclass = "nvme" if is_nvme else ("hdd" if is_hdd else "ssd")
             bad, warnr = [], []
             if d.get("smart_passed") is False: bad.append("SMART overall: FAILING")
             for k, label in (("realloc", "reallocated sectors"), ("pending", "pending sectors"),
@@ -275,14 +290,23 @@ def apply_rules(rep):
             if ata.get("crc_errors"): warnr.append(f"{ata['crc_errors']} CRC errors (check SATA cable)")
             pu = nv.get("percentage_used")
             if pu is not None and pu >= 90: warnr.append(f"SSD {pu}% worn")
-            if d.get("temp_c") and d["temp_c"] >= 65: warnr.append(f"drive temp {d['temp_c']}°C")
+            temp_limit = 55 if is_hdd else 70
+            if d.get("temp_c") and d["temp_c"] >= temp_limit:
+                warnr.append(f"drive temp {d['temp_c']}°C (high for a {dclass.upper()})")
+            floor = {"nvme": 500, "ssd": 150, "hdd": 50}[dclass]
+            seq = d.get("seq_read_mbs")
+            if seq and seq < floor:
+                warnr.append(f"sequential read {seq}MB/s is slow for a {dclass.upper()} (expected ≥{floor}MB/s) — check link/cable/health")
             if bad: worst = "FAIL"; reasons.append(f"{nm}: " + "; ".join(bad))
             elif warnr:
                 if worst != "FAIL": worst = "WARN"
                 reasons.append(f"{nm}: " + "; ".join(warnr))
             else:
-                extra = f", {d['seq_read_mbs']}MB/s seq read" if d.get("seq_read_mbs") else ""
+                extra = f", {d['seq_read_mbs']}MB/s seq read (ok for {dclass.upper()})" if seq else ""
                 reasons.append(f"{nm}: healthy (self-test {d.get('selftest_status') or 'n/a'}{extra})")
+        ar = rep["meta"].get("abort_reason", "")
+        if "SMART_ERRORS" in ar:
+            worst = "FAIL"; reasons.insert(0, f"NEW SMART errors appeared DURING the stress run — drive degrading under load ({ar.replace('SMART_ERRORS', '').strip()})")
         emit("Storage", worst, reasons)
     else:
         emit("Storage", "SKIP", ["no internal drives found"])
@@ -304,10 +328,13 @@ def apply_rules(rep):
     reasons, status = [], "PASS"
     if dm.get("mce", 0) > 0:
         status = "FAIL"; reasons.append(f"{dm['mce']} Machine Check / hardware error lines in kernel log")
-    if rep["meta"].get("aborted") and "THERMAL" in rep["meta"].get("abort_reason", ""):
-        status = "FAIL"; reasons.append(f"thermal abort: {rep['meta']['abort_reason']}")
+    ar = rep["meta"].get("abort_reason", "")
+    if rep["meta"].get("aborted") and "THERMAL" in ar:
+        status = "FAIL"; reasons.append(f"thermal abort: {ar}")
+    if rep["meta"].get("aborted") and "SMART_ERRORS" in ar:
+        status = "FAIL"; reasons.append("watchdog aborted the run: drive errors grew under load (see Storage)")
     if not reasons:
-        reasons.append(f"max CPU {sens.get('max_cpu_c','?')}°C / max NVMe {sens.get('max_nvme_c','?')}°C during run; no hardware errors in kernel log")
+        reasons.append(f"max CPU {sens.get('max_cpu_c','?')}°C / max drive {sens.get('max_drive_c','?')}°C during run; no hardware errors in kernel log")
     emit("System", status, reasons)
 
     overall = "PASS"
@@ -342,7 +369,7 @@ def svg_chart(pts, abort_c):
     ]
     if nv_pl:
         parts.append(f'<polyline points="{nv_pl}" fill="none" stroke="#06c" stroke-width="1.5" stroke-dasharray="3,3"/>')
-    parts.append(f'<text x="{P}" y="16" font-size="12" fill="#333">CPU °C (green) / NVMe °C (blue dashed) over {span//60} min — peak {max(p[1] for p in pts)}°C</text>')
+    parts.append(f'<text x="{P}" y="16" font-size="12" fill="#333">CPU °C (green) / drive °C (blue dashed) over {span//60} min — peak {max(p[1] for p in pts)}°C</text>')
     parts.append(f'<text x="{P-26}" y="{y(0)+4:.0f}" font-size="10" fill="#666">0</text><text x="{P-30}" y="{y(vmax-6)+10:.0f}" font-size="10" fill="#666">{vmax-6}</text>')
     parts.append("</svg>")
     return "".join(parts)
@@ -526,7 +553,7 @@ def cmd_finalize(conf_path, run):
     pts = temps_series(run)
     rep["sensors"] = {
         "max_cpu_c": max((p[1] for p in pts), default=0),
-        "max_nvme_c": max((p[2] for p in pts), default=0),
+        "max_drive_c": max((p[2] for p in pts), default=0),
         "series": pts,
     }
     dmesg_txt = raw(run, "dmesg_err.txt")

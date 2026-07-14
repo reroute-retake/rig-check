@@ -26,6 +26,11 @@ LLM_API_KEY=''
 # --- Safety thresholds (conservative defaults; watchdog aborts stress tests above these)
 ABORT_TEMP_C='95'        # CPU package
 NVME_ABORT_TEMP_C='82'   # NVMe composite
+DISK_ABORT_TEMP_C='70'   # SATA drives (via drivetemp)
+# Watchdog also aborts when NEW SMART errors appear mid-run (drive degrading under load).
+
+# --- PC-speaker beeps for headless runs (2=start, 2/3/5=done pass/warn/fail; best-effort)
+BEEP='yes'
 
 # --- After an unattended (preselected-mode) run: stay | poweroff
 AFTER_TEST='stay'
