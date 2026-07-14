@@ -47,8 +47,9 @@ cd rig-check
 bash make-usb.sh
 ```
 
-Needs: `sudo`, `curl`/`wget`, `unzip`, ~2.5GB free disk, a USB stick (8GB min,
-16–32GB recommended), internet on first run (downloads cached in `downloads/`).
+Needs: `sudo`, `curl`/`wget`, `unzip`, ~2.5GB free disk (checked at start; put
+downloads elsewhere with `RIGCHECK_DL=/path bash make-usb.sh`), a USB stick
+(8GB min, 16–32GB recommended), internet on first run (downloads cached).
 
 The wizard picks the USB drive (explicit `YES` confirmation before wiping),
 installs [Ventoy](https://www.ventoy.net), copies

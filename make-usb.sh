@@ -9,7 +9,7 @@ SYSRESCUE_VER="13.01"
 MEMTEST_VER="8.10"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DL="$SCRIPT_DIR/downloads"
+DL="${RIGCHECK_DL:-$SCRIPT_DIR/downloads}"   # override download dir: RIGCHECK_DL=/path bash make-usb.sh
 PAYLOAD="$SCRIPT_DIR/payload"
 mkdir -p "$DL"
 
@@ -18,8 +18,11 @@ ok() { printf '\033[1;32m[ok]\033[0m %s\n' "$*"; }
 warn(){ printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
 die(){ printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
-# single-quote a value safely for a shell-sourceable conf file
-q() { printf "%s" "$1" | sed "s/'/'\\\\''/g"; }
+# Single-quote-escape a value for the conf file. Deliberately NOT printf '%q' /
+# ${var@Q}: rigcheck.conf is consumed by bash (source) AND python (report.py),
+# and both understand plain single-quote wrapping with the '\'' escape — %q's
+# backslash/$'...' forms would break the python parser. Pure bash, no subprocess.
+q() { local s=${1//\'/\'\\\'\'}; printf '%s' "$s"; }
 
 fetch() { # fetch <url> <outfile>
     local url="$1" out="$2"
@@ -43,6 +46,16 @@ SUDO="sudo"; [ "$(id -u)" = "0" ] && SUDO=""
 SYSRESCUE_ISO="$DL/systemrescue-${SYSRESCUE_VER}-amd64.iso"
 MEMTEST_ISO="$DL/mt86plus_${MEMTEST_VER}.iso"
 VENTOY_TAR="$DL/ventoy-${VENTOY_VER}-linux.tar.gz"
+
+# preflight: downloads need ~2.5GB; skip the check when everything is cached
+if [ ! -f "$SYSRESCUE_ISO" ] || [ ! -f "$VENTOY_TAR" ]; then
+    free_kb=$(df -Pk "$DL" 2>/dev/null | awk 'NR==2{print $4}')
+    if [ -n "${free_kb:-}" ] && [ "$free_kb" -lt 2621440 ]; then
+        die "Only $((free_kb/1024))MB free at $DL — need ~2.5GB for downloads. Free up space or re-run with RIGCHECK_DL=/path/with/space"
+    fi
+    fstype=$(df -PT "$DL" 2>/dev/null | awk 'NR==2{print $2}')
+    [ "${fstype:-}" = "tmpfs" ] && warn "$DL is on tmpfs (RAM-backed) — large downloads may exhaust memory; consider RIGCHECK_DL=/path/on/disk"
+fi
 
 if [ ! -f "$SYSRESCUE_ISO" ]; then
     # accept any systemrescue iso the user pre-downloaded
@@ -81,14 +94,32 @@ ok "All components ready."
 
 # ---------------------------------------------------------------- pick drive
 c "Scanning for USB / removable drives..."
-mapfile -t DRIVES < <(lsblk -dpno NAME,SIZE,MODEL,TRAN,RM 2>/dev/null | awk '$NF==1 || $(NF-1)=="usb"')
+# lsblk -P (key="value" pairs) is robust to empty fields, unlike positional parsing
+DRIVES=()
+while IFS= read -r line; do
+    name=""; size=""; model=""; tran=""; rmflag=""
+    [[ $line =~ NAME=\"([^\"]*)\" ]]  && name="${BASH_REMATCH[1]}"
+    [[ $line =~ SIZE=\"([^\"]*)\" ]]  && size="${BASH_REMATCH[1]}"
+    [[ $line =~ MODEL=\"([^\"]*)\" ]] && model="${BASH_REMATCH[1]}"
+    [[ $line =~ TRAN=\"([^\"]*)\" ]]  && tran="${BASH_REMATCH[1]}"
+    [[ $line =~ RM=\"([^\"]*)\" ]]    && rmflag="${BASH_REMATCH[1]}"
+    [ -n "$name" ] || continue
+    if [ "$rmflag" = "1" ] || [ "$tran" = "usb" ]; then
+        DRIVES+=("${name}"$'\t'"${size:-?}"$'\t'"${model:-?}"$'\t'"${tran:-?}")
+    fi
+done < <(lsblk -dpn -P -o NAME,SIZE,MODEL,TRAN,RM 2>/dev/null)
 [ ${#DRIVES[@]} -gt 0 ] || die "No removable USB drive detected. Insert the stick and re-run."
 echo
-i=1; for d in "${DRIVES[@]}"; do printf '  %d) %s\n' "$i" "$d"; i=$((i+1)); done
+i=1
+for d in "${DRIVES[@]}"; do
+    IFS=$'\t' read -r dn ds dm dt <<< "$d"
+    printf '  %d) %-14s %8s  %s [%s]\n' "$i" "$dn" "$ds" "$dm" "$dt"
+    i=$((i+1))
+done
 echo
 read -rp "Select drive number to WIPE and use for RigCheck: " N
 [[ "$N" =~ ^[0-9]+$ ]] && [ "$N" -ge 1 ] && [ "$N" -le ${#DRIVES[@]} ] || die "Invalid selection."
-DEV=$(echo "${DRIVES[$((N-1))]}" | awk '{print $1}')
+DEV="${DRIVES[$((N-1))]%%$'\t'*}"
 echo
 warn "Selected: $DEV — current contents:"
 lsblk "$DEV" || true
