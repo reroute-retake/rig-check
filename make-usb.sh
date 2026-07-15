@@ -74,7 +74,8 @@ if [ ! -f "$MEMTEST_ISO" ]; then
     if [ -n "$alt" ]; then MEMTEST_ISO="$alt"; ok "Using pre-downloaded $(basename "$alt")"
     else
         c "Downloading Memtest86+ ${MEMTEST_VER}..."
-        if fetch "https://memtest.org/download/v${MEMTEST_VER}/mt86plus_${MEMTEST_VER}.iso.zip" "$DL/mt86plus.zip"; then
+        if fetch "https://memtest.org/download/v${MEMTEST_VER}/mt86plus_${MEMTEST_VER}_x86_64.iso.zip" "$DL/mt86plus.zip" \
+        || fetch "https://memtest.org/download/v${MEMTEST_VER}/mt86plus_${MEMTEST_VER}.iso.zip" "$DL/mt86plus.zip"; then
             (cd "$DL" && unzip -o mt86plus.zip >/dev/null) || die "unzip failed"
             found=$(ls "$DL"/*.iso 2>/dev/null | grep -iv systemrescue | head -1 || true)
             [ -n "$found" ] && mv -f "$found" "$MEMTEST_ISO" 2>/dev/null || true

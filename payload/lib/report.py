@@ -605,7 +605,10 @@ def cmd_finalize(conf_path, run):
         except Exception as ex:
             print(f"{C_Y}[warn]{C_0} Email failed: {ex} (report is still on the USB)")
     elif conf.get("EMAIL_TO"):
-        print(f"{C_Y}[warn]{C_0} Offline — report not emailed (it is on the USB)")
+        if not conf.get("SMTP_HOST"):
+            print(f"{C_Y}[warn]{C_0} EMAIL_TO is set but SMTP_HOST is empty — fill the SMTP_* fields in rigcheck.conf to enable email (report is on the USB)")
+        else:
+            print(f"{C_Y}[warn]{C_0} Offline — report not emailed (it is on the USB)")
 
     return {"PASS": 0, "INFO": 0, "SKIP": 0, "WARN": 1, "FAIL": 2}.get(rep["summary"]["overall"], 1)
 
