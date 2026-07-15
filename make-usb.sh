@@ -220,8 +220,12 @@ ok  "  Verify reports later: python3 verify.py <report.json> --key-file $KEYDIR/
 echo
 c   "On the PC you want to test:"
 c   "  1. Plug in the stick, power on, press the boot-menu key (F12/F11/F8/ESC)"
-c   "  2. Pick the USB -> Ventoy menu -> SystemRescue (default boot entry is fine)"
+c   "  2. Pick the USB -> Ventoy menu -> SystemRescue ->"
+c   "       'Boot SystemRescue and copy system to RAM (copytoram)'   <-- IMPORTANT"
+c   "     (copytoram frees the USB so RigCheck can read config + save reports;"
+c   "      needs ~1GB RAM — fine on 4GB+ machines)"
 c   "  3. At the root shell prompt run:"
+c   "       umount /run/archiso/bootmnt; dmsetup remove ventoy"
 c   "       mount -L Ventoy /mnt && bash /mnt/rigcheck/rigcheck.sh"
 c   "  For a full standalone RAM test instead: pick the Memtest86+ entry in Ventoy."
 ok  "=========================================================="

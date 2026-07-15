@@ -17,7 +17,9 @@ keyboard) and old hardware. 8 GB-RAM friendly; tests scale themselves to the mac
 
 1. Install [Ventoy](https://www.ventoy.net) on a USB stick (8 GB min, 32 GB recommended) and copy the ISO onto it
 2. Optional: create `rigcheck/rigcheck.conf` on the stick ([template](payload/rigcheck.conf.example)) — preselect a test mode, add wifi/email/LLM settings
-3. Boot the target PC from USB (F12/F11/ESC) → pick **RigCheck diagnostic** → it runs itself
+3. Boot the target PC from USB (F12/F11/ESC) → pick **RigCheck diagnostic** →
+   choose the **copy-to-RAM boot entry** (required when booting via Ventoy: it lets
+   RigCheck free the USB stick to read config and save reports) → it runs itself
 
 Verify downloads with the release's `sha256sums.txt`. Prefer a guided setup with a
 signing key, wizard, and SystemRescue fallback? Use [`make-usb.sh`](#create-a-usb-from-the-repo).
@@ -95,6 +97,15 @@ downloads with `RIGCHECK_DL=/path`). The wizard wipes the chosen stick only afte
 explicit `YES`, installs Ventoy + SystemRescue + Memtest86+ + the payload, walks through
 optional settings, and generates a per-stick **signing key** (kept in `~/.rigcheck/keys/`).
 
+Then on the PC being tested: boot the USB → Ventoy → SystemRescue →
+**"copy system to RAM (copytoram)"** entry (important — Ventoy otherwise keeps the
+stick locked; needs ~1 GB RAM, fine on 4 GB+ machines), and at the root shell:
+
+```bash
+umount /run/archiso/bootmnt; dmsetup remove ventoy
+mount -L Ventoy /mnt && bash /mnt/rigcheck/rigcheck.sh
+```
+
 ## Verifying a report
 
 ```bash
@@ -128,7 +139,9 @@ writes a partial report. Storage tests never write to the machine's drives.
 - Stick won't boot → check boot-menu key, disable Secure Boot, try a USB 2.0 port on old boards
 - No wifi on a desktop → plug ethernet, or run offline: the report stays on the stick
 - Hotspot invisible → enable 2.4 GHz on the phone; set `WIFI_COUNTRY`
-- `mount -L Ventoy` fails (SystemRescue path) → `lsblk -f` and mount the exFAT partition manually
+- `mount -L Ventoy` fails with **"Can't open blockdev"** → Ventoy still holds the stick;
+  you booted without copy-to-RAM. Reboot → pick the **copytoram** entry → run
+  `umount /run/archiso/bootmnt; dmsetup remove ventoy` before mounting
 
 ## More
 

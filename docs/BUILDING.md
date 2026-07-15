@@ -57,9 +57,12 @@ then overlays RigCheck:
 ## Using the ISO
 
 - **With an existing RigCheck/Ventoy stick (recommended):** copy
-  `rigcheck-*.iso` next to the other ISOs. Pick it in the Ventoy menu — your
-  existing `rigcheck.conf` and `reports/` on the stick keep working. You can
-  delete the SystemRescue ISO once you trust the RigCheck one.
+  `rigcheck-*.iso` next to the other ISOs. Pick it in the Ventoy menu and boot
+  the **copy-to-RAM entry** — Ventoy holds the stick's partition via
+  device-mapper while an ISO boots from it, and only a copytoram session can
+  release it (`rigcheck-launch` does this automatically). Your existing
+  `rigcheck.conf` and `reports/` on the stick keep working. You can delete the
+  SystemRescue ISO once you trust the RigCheck one.
 - **dd/Etcher:** works (hybrid ISO), but the stick becomes read-only — add a
   partition labeled `RIGCHECK_DATA` (FAT32/exFAT) in the free space after the
   ISO if you want on-stick config/reports, or rely on email delivery.

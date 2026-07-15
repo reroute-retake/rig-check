@@ -10,6 +10,23 @@
 # report engine will still email them when configured+online.
 set -uo pipefail
 
+# Ventoy claims the stick's first partition via device-mapper while the ISO
+# boots from it (mount fails with "Can't open blockdev"). With copytoram the
+# mapping is no longer needed — release it so the data partition becomes
+# mountable. Without copytoram we must leave it alone (the running system
+# still reads from it) and degrade gracefully.
+if dmsetup info ventoy >/dev/null 2>&1; then
+    if grep -qw copytoram /proc/cmdline; then
+        echo "[rigcheck-launch] releasing Ventoy device-mapper hold on the USB..."
+        umount /run/archiso/bootmnt 2>/dev/null || true
+        dmsetup remove ventoy 2>/dev/null || true
+    else
+        echo "[rigcheck-launch] WARNING: booted via Ventoy WITHOUT the copy-to-RAM entry —"
+        echo "  the USB stays locked by the ISO mapping, so stick config/reports are NOT"
+        echo "  accessible this session. Reboot and pick the copytoram boot entry."
+    fi
+fi
+
 DATA=""
 for lbl in RIGCHECK_DATA Ventoy VENTOY; do
     dev=$(blkid -L "$lbl" 2>/dev/null || true)
