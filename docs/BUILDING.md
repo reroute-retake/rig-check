@@ -56,13 +56,22 @@ then overlays RigCheck:
 
 ## Using the ISO
 
-- **With an existing RigCheck/Ventoy stick (recommended):** copy
-  `rigcheck-*.iso` next to the other ISOs. Pick it in the Ventoy menu and boot
-  the **copy-to-RAM entry** — Ventoy holds the stick's partition via
-  device-mapper while an ISO boots from it, and only a copytoram session can
-  release it (`rigcheck-launch` does this automatically). Your existing
-  `rigcheck.conf` and `reports/` on the stick keep working. You can delete the
-  SystemRescue ISO once you trust the RigCheck one.
+- **With a Ventoy stick (recommended; `make-usb.sh` automates all of this):**
+  copy `rigcheck-*.iso` onto the stick. Since v0.4.1 the ISO boots
+  **copytoram by default with a 3s menu timeout**, and `rigcheck-launch`
+  automatically releases Ventoy's device-mapper hold on the stick (Ventoy
+  otherwise keeps the partition locked while an ISO boots from it). For fully
+  hands-off boot also add `ventoy/ventoy.json`:
+
+  ```json
+  { "control": [
+      { "VTOY_MENU_TIMEOUT": "3" },
+      { "VTOY_DEFAULT_IMAGE": "/rigcheck-v0.4.1-x86_64.iso" },
+      { "VTOY_SECONDARY_BOOT_MENU": "0" } ] }
+  ```
+
+  Ventoy-booted sessions need ~4 GB RAM (the OS runs from RAM to free the
+  stick). On v0.4.0 ISOs, manually pick the copy-to-RAM boot entry.
 - **dd/Etcher:** works (hybrid ISO), but the stick becomes read-only — add a
   partition labeled `RIGCHECK_DATA` (FAT32/exFAT) in the free space after the
   ISO if you want on-stick config/reports, or rely on email delivery.

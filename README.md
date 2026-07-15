@@ -13,16 +13,29 @@ keyboard) and old hardware. 8 GB-RAM friendly; tests scale themselves to the mac
 
 ## 📥 Get it
 
-**[⬇ Download the latest ISO](https://github.com/reroute-retake/rig-check/releases/latest)** (~1.7 GB, BIOS + UEFI hybrid)
+**Easiest — one command builds a zero-touch stick:**
 
-1. Install [Ventoy](https://www.ventoy.net) on a USB stick (8 GB min, 32 GB recommended) and copy the ISO onto it
-2. Optional: create `rigcheck/rigcheck.conf` on the stick ([template](payload/rigcheck.conf.example)) — preselect a test mode, add wifi/email/LLM settings
-3. Boot the target PC from USB (F12/F11/ESC) → pick **RigCheck diagnostic** →
-   choose the **copy-to-RAM boot entry** (required when booting via Ventoy: it lets
-   RigCheck free the USB stick to read config and save reports) → it runs itself
+```bash
+git clone https://github.com/reroute-retake/rig-check.git && cd rig-check
+bash make-usb.sh
+```
 
-Verify downloads with the release's `sha256sums.txt`. Prefer a guided setup with a
-signing key, wizard, and SystemRescue fallback? Use [`make-usb.sh`](#create-a-usb-from-the-repo).
+It downloads the [latest ISO](https://github.com/reroute-retake/rig-check/releases/latest)
+(~1.7 GB, BIOS + UEFI hybrid), installs Ventoy, walks you through one-time settings
+(test mode, wifi, email, AI key), generates your signing key, and configures
+**hands-off boot**.
+
+Then on the PC to test: **power on → boot-menu key (F12/F11/ESC) → pick the USB.
+That's it.** No menus, no typing — RigCheck auto-boots in seconds, reads the stick's
+config, runs the tests, saves the signed report to the stick, and emails it to you.
+Set "USB first" once in BIOS and it's true plug-and-power-on for headless machines.
+
+**Manual alternative:** grab the ISO from [Releases](https://github.com/reroute-retake/rig-check/releases/latest)
+(verify with `sha256sums.txt`) and drop it on your own Ventoy stick — add
+`ventoy/ventoy.json` for auto-boot and a `rigcheck/rigcheck.conf`
+([template](payload/rigcheck.conf.example)); details in [docs/BUILDING.md](docs/BUILDING.md).
+Zero-touch boot needs ISO **v0.4.1+** and ~4 GB RAM on the target (the ISO runs from
+RAM so it can free the USB stick for config/reports).
 
 ## What a run looks like
 
@@ -97,9 +110,10 @@ downloads with `RIGCHECK_DL=/path`). The wizard wipes the chosen stick only afte
 explicit `YES`, installs Ventoy + SystemRescue + Memtest86+ + the payload, walks through
 optional settings, and generates a per-stick **signing key** (kept in `~/.rigcheck/keys/`).
 
-Then on the PC being tested: boot the USB → Ventoy → SystemRescue →
-**"copy system to RAM (copytoram)"** entry (important — Ventoy otherwise keeps the
-stick locked; needs ~1 GB RAM, fine on 4 GB+ machines), and at the root shell:
+The wizard prefers the RigCheck ISO (zero-touch). If it isn't downloadable
+(`RIGCHECK_USE_SYSRESCUE=1` forces this too), it falls back to **SystemRescue +
+Memtest86+**, which needs manual steps on the test PC: boot the
+**"copy system to RAM (copytoram)"** entry, then at the root shell:
 
 ```bash
 umount /run/archiso/bootmnt; dmsetup remove ventoy

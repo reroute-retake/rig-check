@@ -46,6 +46,7 @@ SUDO="sudo"; [ "$(id -u)" = "0" ] && SUDO=""
 SYSRESCUE_ISO="$DL/systemrescue-${SYSRESCUE_VER}-amd64.iso"
 MEMTEST_ISO="$DL/mt86plus_${MEMTEST_VER}.iso"
 VENTOY_TAR="$DL/ventoy-${VENTOY_VER}-linux.tar.gz"
+RIGCHECK_ISO=""
 
 # preflight: downloads need ~2.5GB; skip the check when everything is cached
 if [ ! -f "$SYSRESCUE_ISO" ] || [ ! -f "$VENTOY_TAR" ]; then
@@ -57,7 +58,32 @@ if [ ! -f "$SYSRESCUE_ISO" ] || [ ! -f "$VENTOY_TAR" ]; then
     [ "${fstype:-}" = "tmpfs" ] && warn "$DL is on tmpfs (RAM-backed) — large downloads may exhaust memory; consider RIGCHECK_DL=/path/on/disk"
 fi
 
-if [ ! -f "$SYSRESCUE_ISO" ]; then
+# Preferred payload: the official RigCheck ISO (zero-touch boot: no menus, no
+# typing on the test PC). Set RIGCHECK_USE_SYSRESCUE=1 to force the manual
+# SystemRescue fallback instead.
+if [ "${RIGCHECK_USE_SYSRESCUE:-0}" != "1" ]; then
+    alt=$(ls "$DL"/rigcheck-*-x86_64.iso 2>/dev/null | head -1 || true)
+    if [ -n "$alt" ]; then
+        RIGCHECK_ISO="$alt"; ok "Using pre-downloaded $(basename "$alt")"
+    else
+        c "Looking up the latest RigCheck ISO on GitHub Releases..."
+        API="https://api.github.com/repos/reroute-retake/rig-check/releases/latest"
+        if command -v curl >/dev/null; then REL_JSON=$(curl -fsSL "$API" 2>/dev/null || true)
+        else REL_JSON=$(wget -qO- "$API" 2>/dev/null || true); fi
+        ISO_URL=$(printf '%s' "$REL_JSON" | grep -oE '"browser_download_url": *"[^"]*\.iso"' | head -1 | cut -d'"' -f4)
+        if [ -n "$ISO_URL" ]; then
+            c "Downloading $(basename "$ISO_URL") (~1.7GB, one time — cached for reuse)..."
+            if fetch "$ISO_URL" "$DL/$(basename "$ISO_URL")"; then
+                RIGCHECK_ISO="$DL/$(basename "$ISO_URL")"
+            fi
+        fi
+        [ -n "$RIGCHECK_ISO" ] || warn "RigCheck ISO not available — falling back to SystemRescue (manual boot steps on the test PC)"
+    fi
+fi
+
+if [ -n "$RIGCHECK_ISO" ]; then
+    : # RigCheck ISO includes Memtest86+ boot entries and the whole toolchain
+elif [ ! -f "$SYSRESCUE_ISO" ]; then
     # accept any systemrescue iso the user pre-downloaded
     alt=$(ls "$DL"/systemrescue-*-amd64.iso 2>/dev/null | head -1 || true)
     if [ -n "$alt" ]; then SYSRESCUE_ISO="$alt"; ok "Using pre-downloaded $(basename "$alt")"
@@ -69,7 +95,7 @@ if [ ! -f "$SYSRESCUE_ISO" ]; then
     fi
 fi
 
-if [ ! -f "$MEMTEST_ISO" ]; then
+if [ -z "$RIGCHECK_ISO" ] && [ ! -f "$MEMTEST_ISO" ]; then
     alt=$(ls "$DL"/mt86plus*.iso "$DL"/memtest*.iso 2>/dev/null | head -1 || true)
     if [ -n "$alt" ]; then MEMTEST_ISO="$alt"; ok "Using pre-downloaded $(basename "$alt")"
     else
@@ -143,12 +169,25 @@ $SUDO mount "$PART" "$MNT" || die "Could not mount $PART (kernel exFAT support n
 ok "Ventoy installed; data partition mounted."
 
 # ---------------------------------------------------------------- copy files
-c "Copying ISOs and RigCheck payload (this can take a few minutes)..."
-$SUDO cp "$SYSRESCUE_ISO" "$MNT/" || die "ISO copy failed."
-[ -n "$MEMTEST_ISO" ] && $SUDO cp "$MEMTEST_ISO" "$MNT/"
+c "Copying ISO and RigCheck payload (this can take a few minutes)..."
+ISO_BASENAME=""
+if [ -n "$RIGCHECK_ISO" ]; then
+    $SUDO cp "$RIGCHECK_ISO" "$MNT/" || die "ISO copy failed."
+    ISO_BASENAME=$(basename "$RIGCHECK_ISO")
+else
+    $SUDO cp "$SYSRESCUE_ISO" "$MNT/" || die "ISO copy failed."
+    [ -n "$MEMTEST_ISO" ] && [ -f "$MEMTEST_ISO" ] && $SUDO cp "$MEMTEST_ISO" "$MNT/"
+fi
 $SUDO mkdir -p "$MNT/rigcheck/reports"
 $SUDO cp -r "$PAYLOAD/." "$MNT/rigcheck/"
 $SUDO cp "$SCRIPT_DIR/verify.py" "$MNT/rigcheck/" 2>/dev/null || true
+
+# zero-touch Ventoy: auto-boot the RigCheck ISO after 3s, skip the mode submenu
+if [ -n "$ISO_BASENAME" ]; then
+    $SUDO mkdir -p "$MNT/ventoy"
+    printf '{\n  "control": [\n    { "VTOY_MENU_TIMEOUT": "3" },\n    { "VTOY_DEFAULT_IMAGE": "/%s" },\n    { "VTOY_SECONDARY_BOOT_MENU": "0" }\n  ]\n}\n' \
+        "$ISO_BASENAME" | $SUDO tee "$MNT/ventoy/ventoy.json" >/dev/null
+fi
 
 # ---------------------------------------------------------------- config wizard
 echo
@@ -218,14 +257,23 @@ ok  "RigCheck USB created successfully on $DEV"
 ok  "  Signing key saved to: $KEYDIR/$STICK_ID.key  (keep this!)"
 ok  "  Verify reports later: python3 verify.py <report.json> --key-file $KEYDIR/$STICK_ID.key"
 echo
-c   "On the PC you want to test:"
+if [ -n "$ISO_BASENAME" ]; then
+c   "On the PC you want to test — ZERO-TOUCH:"
+c   "  1. Plug in the stick, power on, press the boot-menu key (F12/F11/F8/ESC)"
+c   "     (or set 'USB first' once in BIOS for true plug-and-power-on)"
+c   "  2. Pick the USB. That's it — no more menus, no typing:"
+c   "     Ventoy auto-boots RigCheck in 3s -> RigCheck starts itself, reads this"
+c   "     stick's config, runs the tests, saves + emails the report."
+c   "  (Memtest86+ for full RAM coverage is in the same boot menu — press a key"
+c   "   during the 3s countdown to pick it. Needs 4GB+ RAM via Ventoy.)"
+else
+c   "On the PC you want to test (SystemRescue fallback — manual steps):"
 c   "  1. Plug in the stick, power on, press the boot-menu key (F12/F11/F8/ESC)"
 c   "  2. Pick the USB -> Ventoy menu -> SystemRescue ->"
 c   "       'Boot SystemRescue and copy system to RAM (copytoram)'   <-- IMPORTANT"
-c   "     (copytoram frees the USB so RigCheck can read config + save reports;"
-c   "      needs ~1GB RAM — fine on 4GB+ machines)"
 c   "  3. At the root shell prompt run:"
 c   "       umount /run/archiso/bootmnt; dmsetup remove ventoy"
 c   "       mount -L Ventoy /mnt && bash /mnt/rigcheck/rigcheck.sh"
 c   "  For a full standalone RAM test instead: pick the Memtest86+ entry in Ventoy."
+fi
 ok  "=========================================================="

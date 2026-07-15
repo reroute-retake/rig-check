@@ -61,6 +61,17 @@ find "$PROFILE/airootfs/opt/rigcheck/lib" -name '*.sh' -exec chmod 755 {} + 2>/d
 sed -i 's/Arch Linux install medium/RigCheck diagnostic/g' \
     "$PROFILE"/grub/grub.cfg "$PROFILE"/syslinux/*.cfg "$PROFILE"/efiboot/loader/entries/*.conf 2>/dev/null || true
 
+# ---------------------------------------------------------------- zero-touch boot
+# The diagnostic should run itself: short menu timeout, and copytoram on the
+# Linux entries so rigcheck-launch can release Ventoy's device-mapper hold on
+# the USB stick (needed to read config / write reports). Low-RAM (<4GB)
+# machines can still edit the entry (press 'e') and remove 'copytoram'.
+msg "Enabling zero-touch boot (timeout 3s, copytoram default)"
+sed -i 's/^set timeout=.*/set timeout=3/' "$PROFILE/grub/grub.cfg" 2>/dev/null || true
+sed -i '/vmlinuz-linux/s/$/ copytoram/' "$PROFILE/grub/grub.cfg" 2>/dev/null || true
+sed -i 's/^TIMEOUT .*/TIMEOUT 30/' "$PROFILE"/syslinux/syslinux.cfg 2>/dev/null || true
+sed -i '/^ *APPEND /s/$/ copytoram/' "$PROFILE"/syslinux/archiso_sys*.cfg 2>/dev/null || true
+
 # ---------------------------------------------------------------- build
 msg "Building ISO (this takes a while)..."
 mkarchiso -v -w "$WORK" -o "$OUT" "$PROFILE"
